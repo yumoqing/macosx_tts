@@ -1,9 +1,9 @@
-from pyobjus import autoclass
+from pyobjus import autoclass, protocol
 from pyobjus.dylib_manager import load_framework, INCLUDE
 load_framework(INCLUDE.AVFoundation)
 load_framework('/System/Library/Frameworks/AppKit.framework')
 load_framework('/System/Library/Frameworks/Foundation.framework')
-from PyObjCTools import AppHelper
+# from PyObjCTools import AppHelper
 from pyttsx3.voice import Voice
 NSTimer = autoclass('NSTimer')
 NSString = autoclass('NSString')
@@ -20,7 +20,7 @@ def buildDriver(proxy):
 class MacosxSpeechDriver:
 	def __init__(self, proxy):
 		self._proxy = proxy
-		self._tts = AVSpeechSynthesizer.alloc().init()
+		self._tts = NSSpeechSynthesizer.alloc().init()
 		self._tts.setDelegate_(self)
 		# default rate
 		self._tts.setRate_(200)
@@ -55,18 +55,25 @@ class MacosxSpeechDriver:
 		self._tts.stopSpeaking()
 
 	def _toVoice(self, attr):
+		print('attr=', dir(attr))
 		try:
-			lang = attr['VoiceLocaleIdentifier']
+			lang = attr.valueForKey_('VoiceLocaleIdentifier')
 		except KeyError:
-			lang = attr['VoiceLanguage']
-		return Voice(attr['VoiceIdentifier'], attr['VoiceName'],
-					 [lang], attr['VoiceGender'],
-					 attr['VoiceAge'])
+			lang = attr.valueForKey_('VoiceLanguage')
+		return Voice(attr.valueForKey_('VoiceIdentifier'), 
+						attr.valueForKey_('VoiceName'),
+					 [lang], attr.valueForKey_('VoiceGender'),
+					 attr.valueForKey_('VoiceAge'))
 
 	def getProperty(self, name):
 		if name == 'voices':
-			return [self._toVoice(NSSpeechSynthesizer.attributesForVoice_(v))
-					for v in list(NSSpeechSynthesizer.availableVoices())]
+			voices = NSSpeechSynthesizer.availableVoices()
+			# print(type(voices), dir(voices))
+			x = [ self._toVoice(NSSpeechSynthesizer.attributesForVoice_(voices.objectAtIndex_(i))) 
+						for i in range(voices.count()) ]
+			print('voice[0]=', str(x[0]), dir(x[0]))
+			return x
+
 		elif name == 'voice':
 			return self._tts.voice()
 		elif name == 'rate':
@@ -99,7 +106,17 @@ class MacosxSpeechDriver:
 		url = NSURL.fileURLWithPath_(filename)
 		self._tts.startSpeakingString_toURL_(text, url)
 
-	def speechSynthesizer_didFinishSpeaking_(self, tts, success):
+	@protocol('NSSpeechSynthesizerDelegate')
+	def speechSynthesizer_willSpeakPhoneme_(self,  *args):
+		print('speechSynthesizer_willSpeakPhoneme_():args=', args)
+
+	@protocol('NSSpeechSynthesizerDelegate')
+	def speechSynthesizer_willSpeakWord_ofString_(self,  *args):
+		print('speechSynthesizer_willSpeakWord_of_(), args=',args)
+
+	@protocol('NSSpeechSynthesizerDelegate')
+	def speechSynthesizer_didFinishSpeaking_(self, *args):
+		print('speechSynthesizer_didFinish_():args=', args)
 		if not self._completed:
 			success = False
 		else:
@@ -107,6 +124,3 @@ class MacosxSpeechDriver:
 		self._proxy.notify('finished-utterance', completed=success)
 		self._proxy.setBusy(False)
 
-	def speechSynthesizer_willSpeakWord_ofString_(self, tts, rng, text):
-		self._proxy.notify('started-word', location=rng.location,
-						   length=rng.length)
