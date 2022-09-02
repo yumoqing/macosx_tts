@@ -74,7 +74,7 @@ class MacosxSpeechDriver(BaseDriver):
 		
 	def pre_command(self, sentence):
 		# super().pre_command(sentence)
-		return sentence.sentence_id, sentence
+		return sentence.start_pos, sentence
 
 	def command(self, pos, sentence):
 		text = sentence.text
